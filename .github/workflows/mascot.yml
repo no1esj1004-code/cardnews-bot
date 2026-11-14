@@ -1,0 +1,47 @@
+name: 마스코트 만들기 (수동)
+
+# 채널 캐릭터의 기준 그림을 만들어 assets/ 폴더에 저장합니다.
+# 처음 한 번 실행하고, 결과가 마음에 들지 않으면 다시 실행하세요 (실행할 때마다 새로 그립니다).
+# 결과 확인: 실행 화면 아래 Artifacts 의 mascot, 또는 저장소의 assets/mascot.png
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cardnews
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      IMAGE_MODEL: ${{ vars.IMAGE_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -q -r requirements.txt
+      - name: 마스코트 그리기
+        run: python main.py mascot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mascot
+          path: assets/
+          retention-days: 30
+      - name: 저장소에 저장
+        run: |
+          git config user.name "cardnews-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets
+          if ! git diff --cached --quiet; then
+            git commit -qm "mascot: 기준 그림 갱신"
+            git pull -q --rebase
+            git push -q
+          fi

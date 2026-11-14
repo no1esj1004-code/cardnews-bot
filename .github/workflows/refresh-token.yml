@@ -1,0 +1,30 @@
+name: 인스타 토큰 갱신 (매주)
+
+# 인스타그램 장기 토큰은 60일 뒤 만료됩니다. 매주 갱신해서 Secret을 자동으로 바꿔둡니다.
+# 필요 조건: Secrets에 GH_PAT (이 저장소의 Secrets 쓰기 권한이 있는 Personal Access Token) 등록.
+# GH_PAT이 없으면 이 워크플로는 아무것도 하지 않으며, 그 경우 60일마다 토큰을 직접 교체해야 합니다.
+
+on:
+  schedule:
+    - cron: "23 18 * * 0"    # 매주 월요일 03:23 KST
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 토큰 갱신
+        if: env.GH_TOKEN != ''
+        run: |
+          pip install -q requests
+          NEW_TOKEN=$(python scripts/refresh_ig_token.py)
+          echo "::add-mask::$NEW_TOKEN"
+          gh secret set IG_ACCESS_TOKEN --repo "${{ github.repository }}" --body "$NEW_TOKEN"
+          echo "IG_ACCESS_TOKEN 갱신 완료"

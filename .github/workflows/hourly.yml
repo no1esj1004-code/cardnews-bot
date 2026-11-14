@@ -1,0 +1,98 @@
+name: 카드뉴스 (매시간)
+
+on:
+  schedule:
+    - cron: "7 * * * *"      # 매시 7분 (UTC 기준이지만 매시간이라 시차 무관). 정각은 GitHub가 붐벼 지연이 잦습니다.
+  workflow_dispatch:          # Actions 탭에서 수동 실행 버튼
+
+permissions:
+  contents: write             # 게시 이력(state)과 이미지(media 브랜치)를 저장소에 올리기 위해 필요
+
+concurrency:
+  group: cardnews
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # ── Variables (Settings → Secrets and variables → Actions → Variables) ──
+      DRY_RUN: ${{ vars.DRY_RUN }}                 # 'false'로 설정해야 실제 게시됩니다 (기본: 시험 모드)
+      TREND_SOURCES: ${{ vars.TREND_SOURCES }}       # 비우면 전체 수집원 사용 (키가 없는 곳은 자동으로 건너뜀)
+      CHANNEL_NAME: ${{ vars.CHANNEL_NAME }}
+      CHANNEL_HANDLE: ${{ vars.CHANNEL_HANDLE }}
+      ACCENT_COLOR: ${{ vars.ACCENT_COLOR }}
+      QUIET_HOURS: ${{ vars.QUIET_HOURS }}
+      MAX_POSTS_PER_DAY: ${{ vars.MAX_POSTS_PER_DAY }}
+      CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+      IMAGE_MODEL: ${{ vars.IMAGE_MODEL }}
+      IMAGE_QUALITY: ${{ vars.IMAGE_QUALITY }}       # low / medium / high (기본 medium)
+      CARD_IMAGES: ${{ vars.CARD_IMAGES }}           # false면 표지에만 이미지
+      MASCOT: ${{ vars.MASCOT }}                     # false면 마스코트 없이 주제 이미지 디자인
+      IG_USER_ID: ${{ vars.IG_USER_ID }}
+      # ── Secrets ──
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+      # 이미지 공개 주소: 이 저장소 media 브랜치의 raw 주소
+      PUBLIC_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/media
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 한글 글꼴·라이브러리 설치
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          pip install -q -r requirements.txt
+
+      - name: 수집 → 원고 → 카드 제작
+        id: build
+        run: python main.py build
+
+      - name: 만든 카드 보관 (Actions 실행 화면에서 내려받기, 7일)
+        if: steps.build.outputs.has_post == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cards-${{ github.run_id }}
+          path: output/
+          retention-days: 7
+
+      - name: 이미지 공개 (media 브랜치에 최신 회차만 덮어쓰기)
+        if: steps.build.outputs.has_post == 'true' && vars.DRY_RUN == 'false'
+        run: |
+          cd output
+          git init -q -b media
+          git config user.name "cardnews-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "media ${{ github.run_id }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" media
+          rm -rf .git
+
+      - name: 인스타그램 게시
+        if: steps.build.outputs.has_post == 'true'
+        run: python main.py publish
+
+      - name: 게시 이력 저장
+        if: always()
+        run: |
+          git config user.name "cardnews-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/posted.json
+          if ! git diff --cached --quiet; then
+            git commit -qm "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull -q --rebase
+            git push -q
+          fi
