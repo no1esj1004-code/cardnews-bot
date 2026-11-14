@@ -28,6 +28,11 @@ def _set_output(name: str, value: str) -> None:
 
 def build() -> None:
     state.clear_pending()
+    if not config.ANTHROPIC_API_KEY:
+        # 키를 등록하기 전에는 실패로 처리하지 않고, 수집원이 동작하는지만 보여줍니다.
+        print("ANTHROPIC_API_KEY가 아직 등록되지 않았습니다. 카드 제작은 건너뛰고 수집원 점검만 합니다.\n")
+        check_sources()
+        return
     if state.in_quiet_hours():
         print(f"쉬는 시간대({config.QUIET_HOURS}시)입니다. 이번 회차는 건너뜁니다.")
         return
