@@ -72,10 +72,13 @@ MIN_SOURCES = env_int("MIN_SOURCES", 2)                 # 최소 몇 개 언론�
 # signal      시그널(signal.bz) 실시간 검색어       무료, 키 불필요
 # google_news 구글 뉴스 '엔터테인먼트' 섹션 RSS     무료, 키 불필요
 # youtube     유튜브 한국 인기 동영상 (참고 신호)   무료, YOUTUBE_API_KEY 필요
-# dcinside    디시 실시간 베스트 제목 (참고 신호)   무료, 키 불필요
+# fmkorea     에펨코리아 포텐 터짐 인기글 제목      무료, 키 불필요 (커뮤니티)
+# ruliweb     루리웹 베스트 인기글 제목              무료, 키 불필요 (커뮤니티)
+# ppomppu     뽐뿌 HOT 게시글 제목                   무료, 키 불필요 (커뮤니티)
+# dcinside    디시 실시간 베스트 제목                무료, 키 불필요 (커뮤니티)
 # x           X(트위터) 트렌드                      유료, X_BEARER_TOKEN 필요
 TREND_SOURCES = [s.strip().lower() for s in
-                 env("TREND_SOURCES", "google,daum,zum,signal,google_news,youtube,dcinside,x").split(",")
+                 env("TREND_SOURCES", "fmkorea,ruliweb,ppomppu,dcinside,google,daum,zum,signal,google_news,youtube,x").split(",")
                  if s.strip()]
 GOOGLE_TRENDS_GEO = env("GOOGLE_TRENDS_GEO", "KR")
 YOUTUBE_API_KEY = env("YOUTUBE_API_KEY")
@@ -92,6 +95,8 @@ THREADS_ACCESS_TOKEN = env("THREADS_ACCESS_TOKEN")
 # ── Claude (선별·요약·카피 작성) ────────────────────────────────────────
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = env("CLAUDE_MODEL", "claude-sonnet-5-5")
+CLAUDE_MODEL_FAST = env("CLAUDE_MODEL_FAST", "claude-haiku-5-5")   # 커뮤니티 제목에서 화제 키워드를 뽑는 데 사용
+COMMUNITY_TOPICS = env_int("COMMUNITY_TOPICS", 10)                  # 커뮤니티 인기글에서 뽑을 화제 수
 
 # ── AI 이미지 ───────────────────────────────────────────────────────────
 OPENAI_API_KEY = env("OPENAI_API_KEY")

@@ -15,9 +15,10 @@ SYSTEM_PROMPT = """당신은 한국 인스타그램 카드뉴스 채널 '{channe
 {scope} 분야만 다룹니다. 예: 드라마·영화·예능·음악·아이돌 활동 소식, 공연·전시, 유행하는 밈과 챌린지, 화제의 콘텐츠.
 
 [고르는 기준]
+- 출처가 '커뮤니티 인기글'인 후보는 사람들이 지금 실제로 이야기하는 주제이므로 가장 우선합니다.
 - 같은 이야기가 여러 후보나 여러 출처에 걸쳐 나타나면 그만큼 화제인 것이니 우선합니다. 이때는 뉴스 근거가 가장 충실한 후보의 번호를 고릅니다.
 - 후보에 붙은 '반응'(네이버 카페·블로그에 방금 올라온 글)은 사람들이 이 주제를 어떻게 이야기하는지 보여줍니다. 반응이 활발한 후보를 우선하고, "반응" 카드에서 전반적인 분위기를 자기 말로 전하는 데 씁니다. 특정 글을 인용하거나 글쓴이·카페 이름을 밝히지 않고, 거기 적힌 주장을 사실로 옮기지 않습니다.
-- '참고 신호'(유튜브 인기 동영상, 커뮤니티 인기글 제목)는 무엇이 화제인지 가늠하는 용도로만 씁니다. 확인되지 않은 내용이므로 원고에는 절대 옮기지 않고, 고른 후보의 뉴스에 있는 사실만 씁니다.
+- '참고 신호'(커뮤니티 인기글 제목 원문, 유튜브 인기 동영상)는 무엇이 화제인지 가늠하는 용도로만 씁니다. 확인되지 않은 내용이므로 원고에는 절대 옮기지 않고, 고른 후보의 뉴스에 있는 사실만 씁니다.
 
 [절대 다루지 않는 것 → 해당 후보는 제외, 남는 후보가 없으면 skip]
 - 정치·선거·시사 갈등, 사건·사고·재난, 범죄·수사·소송
@@ -117,6 +118,63 @@ TOOL = {
         "required": ["decision"],
     },
 }
+
+
+TOPIC_TOOL = {
+    "name": "submit_topics",
+    "description": "커뮤니티 인기글 제목에서 고른 화제와 뉴스 검색어를 제출합니다.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"topics": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string", "description": "네이버 뉴스 검색어 (고유명사 중심 2~4단어)"},
+                "seen_in": {"type": "array", "items": {"type": "string"}, "description": "이 화제가 보인 커뮤니티 이름"},
+            },
+            "required": ["keyword", "seen_in"],
+        }}},
+        "required": ["topics"],
+    },
+}
+
+TOPIC_PROMPT = """한국 커뮤니티의 지금 인기글 제목 목록입니다. 이 중에서 {scope} 분야의 화제를 골라, 뉴스로 확인할 수 있도록 검색어로 바꿔 주세요.
+
+- 최대 {limit}개. 여러 커뮤니티에 함께 보이거나 같은 화제의 글이 여러 개인 것을 먼저 고릅니다.
+- 검색어는 제목에 실제로 나온 고유명사(작품·프로그램·그룹·행사 이름 등) 중심의 2~4단어로 만듭니다. 제목에 없는 내용을 덧붙이지 않습니다.
+- 제외: 정치·시사 갈등, 사건·사고·범죄, 사망·건강, 열애·이혼 같은 사생활, 확인되지 않은 폭로·논란, 특정인 비난, 광고·핫딜, 무엇을 가리키는지 알 수 없는 글.
+- 해당하는 화제가 없으면 빈 목록을 제출합니다."""
+
+
+def extract_topics(community: dict[str, list[str]]) -> list[dict]:
+    """커뮤니티 인기글 제목 → [{"keyword": 검색어, "seen_in": [커뮤니티…]}]. 글 내용은 읽지 않습니다."""
+    if not config.ANTHROPIC_API_KEY:
+        return []
+    listing = "\n\n".join(f"## {name}\n" + "\n".join(f"- {t}" for t in titles[:25]) for name, titles in community.items())
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={"x-api-key": config.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"},
+        json={
+            "model": config.CLAUDE_MODEL_FAST,
+            "max_tokens": 800,
+            "tools": [TOPIC_TOOL],
+            "tool_choice": {"type": "tool", "name": "submit_topics"},
+            "messages": [{"role": "user", "content": TOPIC_PROMPT.format(scope=config.TOPIC_SCOPE, limit=config.COMMUNITY_TOPICS)
+                          + "\n\n" + listing}],
+        },
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Claude API 오류 ({resp.status_code}): {resp.text[:300]}")
+    for block in resp.json().get("content", []):
+        if block.get("type") == "tool_use":
+            topics = []
+            for item in block["input"].get("topics", [])[: config.COMMUNITY_TOPICS]:
+                keyword = str(item.get("keyword") or "").strip()
+                if 2 <= len(keyword) <= 40:
+                    topics.append({"keyword": keyword, "seen_in": [str(s) for s in item.get("seen_in", [])][:4]})
+            return topics
+    return []
 
 
 def _format_candidates(candidates: list[dict]) -> str:

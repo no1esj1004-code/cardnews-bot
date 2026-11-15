@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.update({"YOUTUBE_API_KEY": "yt", "X_BEARER_TOKEN": "", "NAVER_CLIENT_ID": "n", "NAVER_CLIENT_SECRET": "n",
-                   "THREADS_ACCESS_TOKEN": "", "TREND_SOURCES": ""})
+                   "THREADS_ACCESS_TOKEN": "", "TREND_SOURCES": "", "ANTHROPIC_API_KEY": "a"})
 
 import config  # noqa: E402
 from bot import robots, sources  # noqa: E402
@@ -32,6 +32,12 @@ ROBOTS = {
                                  "Disallow: /board/lists/?id=47\nDisallow: /board/view/?id=47\n"
                                  "Disallow: /board/lists/?id=m_entertainer1\r\nSitemap: https://gall.dcinside.com/_seo/main_gall.xml",
     "https://signal.bz": "User-agent: *\nAllow: /\nUser-agent: *\nDisallow: /private*/",
+    "https://www.fmkorea.com": "User-agent: GPTBot\nUser-agent: ClaudeBot\nDisallow: /\nAllow: /$\n\nUser-agent: *\nDisallow: /\n\n"
+                               "# Open these for all other bots:\nAllow: /$\nAllow: /best\nAllow: /best2\nAllow: /humor\nDisallow: /*search_keyword=\n",
+    "https://bbs.ruliweb.com": "User-agent: *\nDisallow: /search\nDisallow: /member\nDisallow: /*cate=\nDisallow: /*orderby=\n",
+    "https://www.ppomppu.co.kr": "User-agent: *\nAllow: /zboard/\nDisallow: /include/\nDisallow: /search_bbs.php\n",
+    "https://www.clien.net": "User-agent: *\nAllow:/service/board/\nDisallow:/service/recommend\nDisallow: /*?*\n",
+    "https://mlbpark.donga.com": "User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nAllow: /\n",
 }
 
 
@@ -48,6 +54,10 @@ dc = rules("https://gall.dcinside.com")
 assert robots.is_allowed(dc, "/board/lists/?id=dcbest")
 assert not robots.is_allowed(dc, "/board/lists/?id=47") and not robots.is_allowed(dc, "/board/lists/?id=m_entertainer1")
 assert robots.is_allowed(rules("https://signal.bz"), "/") and not robots.is_allowed(rules("https://signal.bz"), "/private1/x")
+assert robots.is_allowed(rules("https://www.fmkorea.com"), "/best") and not robots.is_allowed(rules("https://www.fmkorea.com"), "/football")
+assert robots.is_allowed(rules("https://bbs.ruliweb.com"), "/best/hit") and robots.is_allowed(rules("https://www.ppomppu.co.kr"), "/hot.php")
+assert not robots.is_allowed(rules("https://www.clien.net"), "/service/recommend")        # 클리앙 추천글 불허
+assert not robots.is_allowed(rules("https://mlbpark.donga.com"), "/mp/best.php")           # 엠팍 불허
 assert robots.is_allowed([], "/anything")                                      # robots.txt 없음
 assert not robots.is_allowed(robots.parse("User-agent: cardnews-bot\nDisallow: /\n\nUser-agent: *\nAllow: /"), "/")  # 이름으로 막으면 따름
 print("1. robots.txt 판정 통과")
@@ -99,6 +109,14 @@ DC = ('<table><tr class="ub-content" ><td class="gall_num">설문</td><td class=
       '<em class="icon_img icon_btimebest"></em><strong>[싱갤]</strong> 싱글벙글 추억의 아동만화</a>\n'
       '<a class="reply_numbox" href="https://gall.dcinside.com/board/view/?id=dcbest&amp;no=478725&amp;t=cv"><span class="reply_num">[31]</span></a></td></tr></table>')
 
+FMKOREA = ('<li class="li  li_best2_pop1"><h3 class="title"><a href="/index.php?mid=best2&amp;document_srl=1" class=" hotdeal_var8">'
+           '<span class="ellipsis-target">멜론뮤직어워드 레드카펫 &quot;역대급&quot;</span>&nbsp;<span class="comment_count">[469]</span></a></h3></li>'
+           '<li class="li"><h3 class="title"><a href="/2"><span class="ellipsis-target">세무냥이가 부정행위를 한 방법</span></a></h3></li>')
+RULIWEB = ('<td class="subject"><a class="subject_link deco flex center" href="/best/board/300143/read/1?m=humor"><span>1</span>'
+           '<strong class="text_over">멜뮤 레드카펫 사진 모음.jpg</strong><span class="num_reply"> (100)</span></a></td>')
+PPOMPPU = ('<a class="baseList-title" href="/zboard/view.php?id=news&no=1" ><a href="/zboard/view.php?id=news&no=1" class="baseList-title" >'
+           "<img src='/images/menu/pop_icon2.jpg' alt='hot' />  엑스러브 북미 투어 규모 확장</a>&nbsp;<span class=\"list_comment2\">2</span></a>")
+
 YOUTUBE = {"items": [{"snippet": {"title": "가상밴드 &amp; 친구들 'Comeback' MV", "channelTitle": "가상밴드 Official", "categoryId": "10"},
                       "statistics": {"viewCount": "1234567"}}]}
 
@@ -132,6 +150,12 @@ def fake_get(url, **kw):
         return Resp(text=ZUM)
     if url == "https://api.signal.bz/news/realtime":
         return Resp(body=SIGNAL)
+    if url == "https://www.fmkorea.com/best":
+        return Resp(text=FMKOREA)
+    if url == "https://bbs.ruliweb.com/best/hit":
+        return Resp(text=RULIWEB)
+    if url == "https://www.ppomppu.co.kr/hot.php":
+        return Resp(text=PPOMPPU)
     if url.startswith("https://gall.dcinside.com/board/lists/"):
         return Resp(text=DC)
     if "googleapis.com/youtube" in url:
@@ -147,7 +171,7 @@ def fake_get(url, **kw):
     if "openapi.naver.com" in url:
         query = kw["params"]["query"]
         NAVER_CALLS.append(query)
-        if query in ("데블스 플랜", "문무 드라마", "멜론뮤직어워드 레드카펫", "장혁 연기"):   # 마지막은 '앞 두 단어' 재검색
+        if query in ("데블스 플랜", "문무 드라마", "멜론뮤직어워드 레드카펫", "장혁 연기", "엑스러브 북미 투어"):   # 마지막은 '앞 두 단어' 재검색
             return Resp(body={"items": [
                 {"title": f"<b>{query}</b> 화제", "description": "요약", "originallink": "https://www.news-a.kr/1", "pubDate": NOW},
                 {"title": f"{query} 반응", "description": "요약", "originallink": "https://news-b.com/2", "pubDate": NOW}]})
@@ -155,8 +179,21 @@ def fake_get(url, **kw):
     raise AssertionError("예상 못 한 GET: " + url)
 
 
+topic_calls = []
+
+
+def fake_post(url, **kw):
+    assert "anthropic.com" in url and kw["json"]["tool_choice"]["name"] == "submit_topics"
+    topic_calls.append(kw["json"]["messages"][0]["content"])
+    resp = Resp(body={"content": [{"type": "tool_use", "input": {"topics": [
+        {"keyword": "멜론뮤직어워드 레드카펫", "seen_in": ["에펨코리아", "루리웹"]},
+        {"keyword": "엑스러브 북미 투어", "seen_in": ["뽐뿌"]},
+        {"keyword": "뉴스에 없는 화제", "seen_in": ["디시 실시간 베스트"]}]}}]})
+    return resp
+
+
 config.TREND_SOURCES = list(sources.SOURCES)
-with mock.patch("requests.get", fake_get):
+with mock.patch("requests.get", fake_get), mock.patch("requests.post", fake_post):
     results, report = sources.gather()
     print(*report, sep="\n")
 
@@ -171,20 +208,25 @@ with mock.patch("requests.get", fake_get):
     assert [n["source"] for n in news[0]["news"]] == ["연합뉴스", "스타뉴스"]       # 한 곳만 보도한 기사는 제외됨
     assert results["youtube"] == ["가상밴드 & 친구들 'Comeback' MV — 가상밴드 Official (조회 1,234,567)"]
     assert results["dcinside"] == ["[싱갤] 싱글벙글 추억의 아동만화"]                # 공지·설문 제외
+    assert results["fmkorea"] == ['멜론뮤직어워드 레드카펫 "역대급"', "세무냥이가 부정행위를 한 방법"]
+    assert results["ruliweb"] == ["멜뮤 레드카펫 사진 모음.jpg"] and results["ppomppu"] == ["엑스러브 북미 투어 규모 확장"]
     assert "x" not in results and any("X 트렌드: 건너뜀" in line for line in report)
-    print("2. 수집원 8종 파싱 통과")
+    print("2. 수집원 11종 파싱 통과")
 
     candidates, signals = sources.collect(set())
     names = [c["trend"] for c in candidates]
     # 수집원별 1위부터 번갈아 섞임, 줌·시그널에 함께 나온 검색어는 하나로 합쳐지고 출처가 둘 다 남음
     merged = next(c for c in candidates if c["trend"] == "멜론뮤직어워드 레드카펫")
-    assert merged["origins"] == ["줌 이슈트렌드", "시그널 실시간 검색어"], merged["origins"]
-    assert names[0] == "데블스 플랜" and names[-1] == "케데헌 '골든', 英 차트 73주째 톱 100", names
+    assert merged["origins"] == ["커뮤니티 인기글(에펨코리아, 루리웹)", "줌 이슈트렌드", "시그널 실시간 검색어"], merged["origins"]
+    # 커뮤니티 인기글에서 뽑은 화제가 맨 앞, 그다음 포털 검색어, 마지막이 뉴스 묶음
+    assert names[:3] == ["멜론뮤직어워드 레드카펫", "엑스러브 북미 투어", "데블스 플랜"], names
+    assert names[-1] == "케데헌 '골든', 英 차트 73주째 톱 100" and "뉴스에 없는 화제" not in names
+    assert "## 에펨코리아" in topic_calls[0] and "- 엑스러브 북미 투어 규모 확장" in topic_calls[0]
     assert "엑스러브 북미 투어 규모 확장" not in names                               # 뉴스로 확인 안 된 검색어는 탈락
     assert "장혁 연기, 문무 첫 방송" in names and "장혁 연기" in NAVER_CALLS          # 긴 문구는 앞 두 단어로 재검색
     google = next(c for c in candidates if c["trend"] == "데블스 플랜")
     assert [n["domain"] for n in google["news"]] == ["news-a.kr", "news-b.com", "newsis.com"]
-    assert set(signals) == {"유튜브 인기 동영상", "디시 실시간 베스트"}
+    assert set(signals) == {"유튜브 인기 동영상", "디시 실시간 베스트", "에펨코리아", "루리웹", "뽐뿌"}
     assert google["buzz"] == ["[카페 · 예능 수다방] 데블스 플랜 보신 분? — 어제 회차 반전 대박", "[블로그 · 일상기록] 데블스 플랜 후기 — 정주행 완료"]
     print("3. 후보 병합 통과:", names)
 
@@ -204,7 +246,7 @@ with mock.patch("requests.get", fake_get):
             return Resp(status=503)
         return fake_get(url, **kw)
 
-    with mock.patch("requests.get", fake_get_broken):
+    with mock.patch("requests.get", fake_get_broken), mock.patch("requests.post", fake_post):
         results, report = sources.gather()
     assert "daum" not in results and "zum" not in results and "signal" in results
     assert sum("robots.txt" in line for line in report) == 2, report
@@ -214,7 +256,8 @@ with mock.patch("requests.get", fake_get):
 from bot import editor  # noqa: E402
 
 text = editor._format_candidates(candidates) + editor._format_signals(signals)
-assert "## 후보 0: 데블스 플랜  [실시간 검색어 | 출처: 구글 트렌드 | 검색 500+]" in text
+assert "## 후보 0: 멜론뮤직어워드 레드카펫  [실시간 검색어 | 출처: 커뮤니티 인기글(에펨코리아, 루리웹), 줌 이슈트렌드, 시그널 실시간 검색어]" in text
+assert "데블스 플랜  [실시간 검색어 | 출처: 구글 트렌드 | 검색 500+]" in text
 assert "[뉴스 묶음 | 출처: 구글 뉴스 연예 | 2개 언론사 보도]" in text and "(제목만 제공됨)" in text
 assert "- 반응 [카페 · 예능 수다방] 데블스 플랜 보신 분?" in text
 assert "# 참고 신호" in text and "## 디시 실시간 베스트\n- [싱갤] 싱글벙글 추억의 아동만화" in text

@@ -3,7 +3,9 @@
 수집원은 세 종류입니다.
   keyword  : 실시간 검색어 (구글 트렌드, 다음, 줌, 시그널, X) → 네이버 뉴스로 내용을 확인해 후보로
   headline : 연예 뉴스 묶음 (구글 뉴스) → 같은 사건을 다룬 여러 언론사 기사가 함께 와서 그대로 후보로
-  signal   : 화제성 참고 신호 (유튜브 인기 동영상, 디시 실시간 베스트) → 후보가 아니라 참고 목록으로만
+  community: 커뮤니티 인기글 제목 (에펨코리아, 루리웹, 뽐뿌, 디시) → 제목에서 화제 키워드를 뽑아 가장 먼저 후보로.
+             글 내용은 읽지 않고, 카드에 쓰는 사실은 뉴스에서 확인된 것만 씁니다.
+  signal   : 화제성 참고 신호 (유튜브 인기 동영상) → 후보가 아니라 참고 목록으로만
 
 한 곳이 실패해도 나머지로 계속 진행하고, 결과는 수집원별로 한 줄씩 출력합니다.
 웹 페이지를 직접 읽는 수집원은 먼저 robots.txt를 확인해 허용된 경우에만 읽습니다.
@@ -233,6 +235,30 @@ def fetch_dcinside_titles(limit: int = 25) -> list[str]:
     return titles
 
 
+def _titles(url: str, pattern: str, encoding: str = "utf-8", limit: int = 25) -> list[str]:
+    resp = _get(url, check_robots=True)
+    resp.encoding = encoding
+    titles = list(dict.fromkeys(t for t in (_clean(m)[:80] for m in re.findall(pattern, resp.text, re.S)) if t))
+    if not titles:
+        raise RuntimeError("글 제목을 읽지 못함 (페이지 형식 변경 또는 접속 차단 가능성)")
+    return titles[:limit]
+
+
+def fetch_fmkorea_titles() -> list[str]:
+    """에펨코리아 '포텐 터짐' 인기글 제목."""
+    return _titles("https://www.fmkorea.com/best", r'<span class="ellipsis-target">(.*?)</span>')
+
+
+def fetch_ruliweb_titles() -> list[str]:
+    """루리웹 베스트(조회순) 인기글 제목."""
+    return _titles("https://bbs.ruliweb.com/best/hit", r'<strong class="text_over">(.*?)</strong>')
+
+
+def fetch_ppomppu_titles() -> list[str]:
+    """뽐뿌 HOT 게시글 제목."""
+    return _titles("https://www.ppomppu.co.kr/hot.php", r'class="baseList-title"[^>]*>(.*?)</a>', encoding="euc-kr")
+
+
 # ── 수집원 목록 ─────────────────────────────────────────────────────────
 SOURCES = {
     #  이름            (함수,                  종류,       표시 이름)
@@ -243,7 +269,10 @@ SOURCES = {
     "x":           (fetch_x_trends,        "keyword",  "X 트렌드"),
     "google_news": (fetch_google_news,     "headline", "구글 뉴스 연예"),
     "youtube":     (fetch_youtube_titles,  "signal",   "유튜브 인기 동영상"),
-    "dcinside":    (fetch_dcinside_titles, "signal",   "디시 실시간 베스트"),
+    "fmkorea":     (fetch_fmkorea_titles,  "community", "에펨코리아"),
+    "ruliweb":     (fetch_ruliweb_titles,  "community", "루리웹"),
+    "ppomppu":     (fetch_ppomppu_titles,  "community", "뽐뿌"),
+    "dcinside":    (fetch_dcinside_titles, "community", "디시 실시간 베스트"),
 }
 
 
@@ -390,16 +419,44 @@ def collect(exclude_norms: set[str]) -> tuple[list[dict], dict[str, list[str]]]:
     """후보(뉴스 맥락 포함)와 참고 신호를 모읍니다. 반환: (후보 목록, {신호 이름: [제목…]})"""
     results, report = gather()
     print("수집 결과:", *report, sep="\n")
-    usable = [n for n in results if SOURCES[n][1] != "signal" and results[n]]
+    usable = [n for n in results if SOURCES[n][1] in ("keyword", "headline") and results[n]]
+    community = {SOURCES[n][2]: results[n] for n in results if SOURCES[n][1] == "community" and results[n]}
+    usable += list(community)
     if not usable:
         raise RuntimeError("후보를 만들 수 있는 수집원이 하나도 성공하지 못했습니다.")
     has_naver = bool(config.NAVER_CLIENT_ID and config.NAVER_CLIENT_SECRET)
     if not has_naver:
         print("(네이버 검색 키 없음 → 기사 제목이 함께 오는 구글 트렌드·구글 뉴스만 후보가 됩니다)")
 
+    # 0) 커뮤니티 인기글 제목 → 화제 키워드 (가장 먼저 후보가 됩니다)
+    keyword_trends: dict[str, dict] = {}
+    if community:
+        from bot import editor
+        try:
+            topics = editor.extract_topics(community)
+        except (RuntimeError, requests.RequestException) as exc:
+            print(f"  커뮤니티 화제 추출 실패: {exc}")
+            topics = []
+        print(f"커뮤니티 인기글에서 뽑은 화제 {len(topics)}개: " + ", ".join(t["keyword"] for t in topics))
+        for topic in topics:
+            key = normalize(topic["keyword"])
+            if key and key not in keyword_trends:
+                seen = ", ".join(topic["seen_in"]) or "커뮤니티"
+                keyword_trends[key] = {**_trend(topic["keyword"], f"커뮤니티 인기글({seen})"),
+                                       "origins": [f"커뮤니티 인기글({seen})"]}
+    for trend in interleave(results, "keyword"):   # 포털 실시간 검색어는 그 뒤에
+        key = normalize(trend["name"])
+        if key in keyword_trends:
+            first = keyword_trends[key]
+            first["origins"] += [o for o in trend["origins"] if o not in first["origins"]]
+            first["news"] = merge_news(first["news"], trend["news"])
+            first["volume"] = first["volume"] or trend["volume"]
+        else:
+            keyword_trends[key] = trend
+
     candidates = []
-    # 1) 실시간 검색어 → 네이버 뉴스로 확인
-    for trend in interleave(results, "keyword"):
+    # 1) 화제 키워드 → 네이버 뉴스로 확인
+    for trend in keyword_trends.values():
         if len(candidates) >= config.CANDIDATE_COUNT:
             break
         if normalize(trend["name"]) in exclude_norms:
@@ -430,6 +487,7 @@ def collect(exclude_norms: set[str]) -> tuple[list[dict], dict[str, list[str]]]:
         headline_count += 1
 
     signals = {SOURCES[n][2]: results[n] for n in results if SOURCES[n][1] == "signal" and results[n]}
+    signals.update(community)   # 커뮤니티 제목 원문도 참고용으로 함께 전달
     print(f"후보 {len(candidates)}개 (검색어 {len(candidates) - headline_count} + 뉴스 묶음 {headline_count}), "
           f"참고 신호 {sum(len(v) for v in signals.values())}건")
     return candidates, signals
