@@ -137,6 +137,13 @@ def fake_get(url, **kw):
     if "googleapis.com/youtube" in url:
         assert kw["params"]["chart"] == "mostPopular" and kw["params"]["regionCode"] == "KR"
         return Resp(body=YOUTUBE)
+    if "cafearticle.json" in url or "blog.json" in url:
+        if kw["params"]["query"] != "데블스 플랜":
+            return Resp(body={"items": []})
+        assert kw["params"]["sort"] == "date"
+        if "cafearticle" in url:
+            return Resp(body={"items": [{"title": "<b>데블스 플랜</b> 보신 분?", "description": "어제 회차 반전 대박", "cafename": "예능 수다방"}]})
+        return Resp(body={"items": [{"title": "데블스 플랜 후기", "description": "정주행 완료", "bloggername": "일상기록", "postdate": "20261115"}]})
     if "openapi.naver.com" in url:
         query = kw["params"]["query"]
         NAVER_CALLS.append(query)
@@ -178,6 +185,7 @@ with mock.patch("requests.get", fake_get):
     google = next(c for c in candidates if c["trend"] == "데블스 플랜")
     assert [n["domain"] for n in google["news"]] == ["news-a.kr", "news-b.com", "newsis.com"]
     assert set(signals) == {"유튜브 인기 동영상", "디시 실시간 베스트"}
+    assert google["buzz"] == ["[카페 · 예능 수다방] 데블스 플랜 보신 분? — 어제 회차 반전 대박", "[블로그 · 일상기록] 데블스 플랜 후기 — 정주행 완료"]
     print("3. 후보 병합 통과:", names)
 
     # 이미 다룬 주제 제외
@@ -208,6 +216,7 @@ from bot import editor  # noqa: E402
 text = editor._format_candidates(candidates) + editor._format_signals(signals)
 assert "## 후보 0: 데블스 플랜  [실시간 검색어 | 출처: 구글 트렌드 | 검색 500+]" in text
 assert "[뉴스 묶음 | 출처: 구글 뉴스 연예 | 2개 언론사 보도]" in text and "(제목만 제공됨)" in text
+assert "- 반응 [카페 · 예능 수다방] 데블스 플랜 보신 분?" in text
 assert "# 참고 신호" in text and "## 디시 실시간 베스트\n- [싱갤] 싱글벙글 추억의 아동만화" in text
 print("6. 프롬프트 구성 통과")
 print("\n모든 점검 통과")

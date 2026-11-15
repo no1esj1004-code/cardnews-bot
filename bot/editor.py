@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """당신은 한국 인스타그램 카드뉴스 채널 '{channe
 
 [고르는 기준]
 - 같은 이야기가 여러 후보나 여러 출처에 걸쳐 나타나면 그만큼 화제인 것이니 우선합니다. 이때는 뉴스 근거가 가장 충실한 후보의 번호를 고릅니다.
+- 후보에 붙은 '반응'(네이버 카페·블로그에 방금 올라온 글)은 사람들이 이 주제를 어떻게 이야기하는지 보여줍니다. 반응이 활발한 후보를 우선하고, "반응" 카드에서 전반적인 분위기를 자기 말로 전하는 데 씁니다. 특정 글을 인용하거나 글쓴이·카페 이름을 밝히지 않고, 거기 적힌 주장을 사실로 옮기지 않습니다.
 - '참고 신호'(유튜브 인기 동영상, 커뮤니티 인기글 제목)는 무엇이 화제인지 가늠하는 용도로만 씁니다. 확인되지 않은 내용이므로 원고에는 절대 옮기지 않고, 고른 후보의 뉴스에 있는 사실만 씁니다.
 
 [절대 다루지 않는 것 → 해당 후보는 제외, 남는 후보가 없으면 skip]
@@ -128,6 +129,8 @@ def _format_candidates(candidates: list[dict]) -> str:
             meta = ", ".join(x for x in (n["source"], n["published"]) if x)
             body = f"{n['title']} — {n['summary']}" if n["summary"] else f"{n['title']} (제목만 제공됨)"
             lines.append(f"- 뉴스 {j} [{meta}] {body}")
+        for b in c.get("buzz", []):
+            lines.append(f"- 반응 {b}")
         for t in c.get("threads", []):
             lines.append(f"- Threads 반응: {t}")
         lines.append("")

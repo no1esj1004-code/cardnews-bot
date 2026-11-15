@@ -309,6 +309,32 @@ def fetch_news(query: str, max_items: int = 5, within_hours: int = 48) -> list[d
     return []
 
 
+def fetch_buzz(query: str, per_kind: int = 3) -> list[str]:
+    """네이버 카페·블로그에 방금 올라온 글 (공식 검색 API, 최신순). 사람들의 반응을 보는 용도이며 사실 근거가 아닙니다."""
+    if not (config.NAVER_CLIENT_ID and config.NAVER_CLIENT_SECRET):
+        return []
+    lines = []
+    for kind, label in (("cafearticle", "카페"), ("blog", "블로그")):
+        try:
+            resp = requests.get(
+                f"https://openapi.naver.com/v1/search/{kind}.json",
+                headers={"X-Naver-Client-Id": config.NAVER_CLIENT_ID,
+                         "X-Naver-Client-Secret": config.NAVER_CLIENT_SECRET},
+                params={"query": query, "display": 10, "sort": "date"},
+                timeout=TIMEOUT,
+            )
+            if resp.status_code != 200:
+                continue
+            for raw in resp.json().get("items", [])[:per_kind]:
+                title, text = _clean(raw.get("title")), _clean(raw.get("description"))[:120]
+                where = _clean(raw.get("cafename") or raw.get("bloggername") or "")
+                if title:
+                    lines.append(f"[{label}{' · ' + where if where else ''}] {title} — {text}")
+        except (requests.RequestException, ValueError):
+            continue
+    return lines
+
+
 def fetch_threads_posts(query: str, max_items: int = 5) -> list[str]:
     """(선택) Threads 공개 게시물 반응. THREADS_ACCESS_TOKEN이 없으면 빈 리스트."""
     if not config.THREADS_ACCESS_TOKEN:
@@ -389,7 +415,8 @@ def collect(exclude_norms: set[str]) -> tuple[list[dict], dict[str, list[str]]]:
         news = merge_news(naver_news, trend["news"])
         if news:  # 뉴스로 확인되지 않는 주제는 다루지 않습니다
             candidates.append({"trend": trend["name"], "origins": trend["origins"], "volume": trend["volume"],
-                               "kind": "keyword", "news": news, "threads": fetch_threads_posts(query)})
+                               "kind": "keyword", "news": news, "buzz": fetch_buzz(query),
+                               "threads": fetch_threads_posts(query)})
 
     # 2) 연예 뉴스 묶음 → 그대로 후보
     headline_count = 0

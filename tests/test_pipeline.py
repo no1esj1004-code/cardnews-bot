@@ -78,6 +78,8 @@ def fake_get(url, **kw):
         assert kw["headers"]["Authorization"] == "Bearer x"
         return Resp(body={"data": [{"trend_name": "#가상밴드_컴백", "tweet_count": 52000},
                                    {"trend_name": "뉴스없는키워드"}]})
+    if "cafearticle.json" in url or "blog.json" in url:
+        return Resp(body={"items": []})
     if "openapi.naver.com" in url:
         if "가상밴드" not in kw["params"]["query"]:
             return Resp(body={"items": []})
